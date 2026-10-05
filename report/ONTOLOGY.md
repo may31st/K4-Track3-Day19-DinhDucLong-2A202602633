@@ -66,9 +66,9 @@ flowchart LR
 | Câu | Đường đi (Cypher pattern) | Trả lời được? |
 | --- | --- | --- |
 | Q1 (Khái niệm tiền chất theo luật) | `MATCH (a:Article)-[:HAS_CLAUSE]->(cl:Clause) WHERE a.id CONTAINS 'Luật Phòng, chống ma túy'` | Có (trả lời qua node điều luật và text của khoản) |
-| Q2 (Bị cáo nhận án tử hình vụ 36kg) | `MATCH (p:Person)-[r:INVOLVED_IN]->(k:Case) WHERE r.sentence CONTAINS 'tử hình' OR k.name CONTAINS '36kg'` | Có (đi từ Person qua quan hệ INVOLVED_IN có sentence) |
+| Q2 (Bị cáo nhận án tử hình vụ 36kg: Trần Thanh Tuấn, Trần Minh Tâm) | `MATCH (p:Person {name:'Trần Thanh Tuấn'})-[r:INVOLVED_IN]->(k:Case)-[:CHARGED_WITH]->(c:Crime)<-[:DEFINES]-(a:Article) WHERE r.sentence CONTAINS 'tử hình'` | Có (đi từ Person Trần Thanh Tuấn có sentence='tử hình' qua Case vụ 36kg sang Điều 251 BLHS) |
 | Q3 (Lê Minh Thành: mức án, tội danh, điều luật, khung cơ bản) | `(:Person {name:'Lê Minh Thành'})-[:INVOLVED_IN]->(:Case)-[:CHARGED_WITH]->(:Crime)<-[:DEFINES]-(:Article)-[:HAS_CLAUSE]->(:Clause {number:1})` | Có (đi multi-hop xuyên từ tin tức sang Điều 251 và lấy khoản 1) |
-| Q4 (Hoàng Nato: hành vi và mức phạt tối đa) | `(:Person)-[:INVOLVED_IN]->(:Case)-[:CHARGED_WITH]->(:Crime)<-[:DEFINES]-(:Article)-[:HAS_CLAUSE]->(cl:Clause)` | Có (lấy điều luật tương ứng và các khoản có khung hình phạt cao nhất như chung thân) |
+| Q4 (Hành vi tổ chức sử dụng ma túy và mức phạt tối đa theo BLHS) | `(:Person)-[:INVOLVED_IN]->(:Case)-[:CHARGED_WITH]->(:Crime {name:'tổ chức sử dụng trái phép chất ma túy'})<-[:DEFINES]-(:Article {id:'Điều 255 BLHS'})-[:HAS_CLAUSE]->(:Clause {number:4})` | Có (chỉ ra hành vi tổ chức sử dụng theo Điều 255 và khung tối đa tù chung thân tại khoản 4) |
 | Q5 (Cái Quang Huy: tội danh, chất, khoản áp dụng cho >9.6kg MDMA) | `(:Person {name:'Cái Quang Huy'})-[:INVOLVED_IN]->(k:Case)-[:CHARGED_WITH]->(:Crime)<-[:DEFINES]-(:Article)-[:HAS_CLAUSE]->(cl:Clause)-[:MENTIONS]->(:Substance {name:'MDMA'})` | Có (tìm thấy Điều 250 và bóc tách các khoản nhắc MDMA, đặc biệt là khoản 4 quy định mức trên 100g) |
 | Q6 (Những vụ việc liên quan đến MDMA) | `MATCH (k:Case)-[:INVOLVES]->(s:Substance {name:'MDMA'}) RETURN k.name, k.summary` | Có (đi ngược từ node Substance MDMA về tất cả các Case có dính dáng) |
 
@@ -109,8 +109,14 @@ flowchart LR
 | Câu Q5 (Cái Quang Huy & 9.6kg MDMA) | recall=0.40, judge=1 (sai khung hình phạt) | **recall=1.00, judge=2** (đúng khoản 4 tử hình) | Vượt trội |
 | Câu Q6 (Các vụ việc dính dáng MDMA) | recall=0.33, judge=1 (hụt vụ việc) | **recall=1.00, judge=2** (đủ cả 3 vụ cốt lõi) | Vượt trội |
 
-## 8. Hạn chế còn lại
+## 8. Hạn chế còn lại và hướng cải thiện
 
+### Hạn chế hiện tại:
 - Việc bóc tách khối lượng từ văn bản tin tức vẫn phụ thuộc vào độ chính xác của prompt LLM. Nếu bài báo viết "nhiều bao tải" hoặc "hàng chục bánh" mà không quy ra gam hay kilogam, đồ thị chưa thể tự động tính toán được chính xác để đối chiếu với ngưỡng luật.
 - Định danh cá nhân (`Person`) vẫn còn khả năng bị trùng nếu hai bài báo nhắc đến hai người khác nhau nhưng cùng mang một cái tên phổ biến trong khi chưa có mã định danh công dân hay năm sinh đi kèm.
 - Chi phí indexing graph tăng lên do phải gọi LLM bóc tách thông tin cho từng bài báo và chạy các hàm chuẩn hóa liên kết.
+
+### Hướng cải thiện trong tương lai:
+1. **Mô hình hóa ngưỡng định lượng số học (Numerical Threshold):** Chuẩn hóa trường `weight_in_grams` dạng số thực (float) trên cả node `Clause` và cạnh `INVOLVES`. Khi đó, Cypher có thể so sánh trực tiếp bằng toán tử logic (`WHERE r.weight_in_grams >= clause.min_weight`) để tự động định tuyến đúng khoản luật mà không phụ thuộc vào suy luận văn bản của LLM.
+2. **Tách giai đoạn tố tụng (Proceeding Stage):** Bổ sung thuộc tính `stage` (như `khoi_to`, `truy_to`, `xet_xu_so_tham`, `phuc_tham`) trên quan hệ `INVOLVED_IN` để theo dõi chính xác diễn biến vụ án và tình trạng pháp lý của từng bị can/bị cáo theo thời gian.
+3. **Khử trùng lặp thực thể đa trường (Multi-attribute Disambiguation):** Kết hợp tên cá nhân với địa bàn hoạt động (`Location`) hoặc năm sinh/bí danh khi tạo khóa định danh node `Person` nhằm tránh gộp nhầm người trùng tên ở các tỉnh thành khác nhau.

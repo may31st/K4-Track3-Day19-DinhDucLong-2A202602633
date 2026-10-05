@@ -1,8 +1,12 @@
 """Script to automate taking 3 required screenshots from Neo4j Browser using Playwright."""
 
+import sys
 import time
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
 
 CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 OUTPUT_DIR = Path("report/img")
@@ -87,8 +91,8 @@ def main():
         run_query(":clear", OUTPUT_DIR / "clear.png", wait_secs=1.0)
         (OUTPUT_DIR / "clear.png").unlink(missing_ok=True)
 
-        # 3. Q-D: One case with custom person (Cái Quang Huy)
-        q_d = "MATCH p=(:Person {name:'Cái Quang Huy'})-[:INVOLVED_IN]->(k:Case)-[:CHARGED_WITH]->(:Crime)<-[:DEFINES]-(a:Article) OPTIONAL MATCH q=(k)-[:INVOLVES|LOCATED_IN]->() RETURN p, q;"
+        # 3. Q-D: One case with custom person (Trần Thanh Tuấn - án tử hình vụ 36kg ma túy)
+        q_d = "MATCH p=(:Person {name:'Trần Thanh Tuấn'})-[:INVOLVED_IN]->(k:Case)-[:CHARGED_WITH]->(:Crime)<-[:DEFINES]-(a:Article) OPTIONAL MATCH q=(k)-[:INVOLVES|LOCATED_IN]->() RETURN p, q LIMIT 20;"
         run_query(q_d, OUTPUT_DIR / "kg_my_case.png", wait_secs=6.0)
 
         browser.close()

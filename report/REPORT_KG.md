@@ -69,7 +69,7 @@ Với câu hỏi đơn nguồn (single-hop), thông tin nằm gọn trong một 
   cl.number: 4
   cl.penalty: "phạt tù 20 năm, tù chung thân hoặc tử hình"
   ```
-- **Nguyên nhân:** Lỗi này nằm ở bước Retrieval của Flat RAG. Vector search tìm kiếm theo độ tương đồng ngữ nghĩa của câu hỏi. Câu hỏi nhắc tên "Cái Quang Huy" nên cả 3 chunk vector trả về đều thuộc bài báo. Chunk văn bản của Điều 250 BLHS không hề chứa cái tên "Cái Quang Huy", do đó điểm tương đồng vector rất thấp và bị văng ra khỏi top-k. GraphRAG xử lý được nhờ bước Thiết kế ontology: đưa tội danh "vận chuyển trái phép chất ma túy" làm node cầu nối `Crime`, cho phép nhảy từ vụ án sang Điều 250 và bóc các khoản tương ứng.
+- **Nguyên nhân:** Lỗi này nằm ở bước Retrieval của Flat RAG. Vector search tìm kiếm theo độ tương đồng ngữ nghĩa của câu hỏi. Câu hỏi nhắc tên "Cái Quang Huy" nên cả 3 chunk vector trả về đều thuộc bài báo. Chunk văn bản của Điều 250 BLHS không hề chứa cái tên "Cái Quang Huy", do đó điểm tương đồng vector rất thấp và bị văng ra khỏi top-k. Hiện tượng thiếu ngữ cảnh luật này cũng tương tự khi xét trường hợp của Trần Thanh Tuấn (vụ 36kg ma túy ở câu Q2): bản tin báo chí chỉ nêu mức án sơ thẩm tử hình, còn để biết căn cứ điều luật và khung hình phạt tăng nặng (khoản 4 Điều 251 BLHS) thì vector search hoàn toàn bất lực nếu không có đồ thị định tuyến. GraphRAG xử lý triệt để được nhờ bước Thiết kế ontology: đưa tội danh làm node cầu nối `Crime`, cho phép nhảy từ vụ án sang điều luật tương ứng và tìm ra khung hình phạt cao nhất.
 - **Đề xuất sửa:** Với văn bản pháp lý, không thể chỉ trông cậy vào vector search thuần túy. Nếu không có đồ thị, pipeline RAG bắt buộc phải có bước nhận diện thực thể tội danh bằng mô hình chuyên biệt rồi truy vấn thêm văn bản luật vào ngữ cảnh, hoặc chấp nhận dùng Knowledge Graph để định tuyến quan hệ có cấu trúc.
 
 ### Lỗi E5: Giới hạn truy xuất diện rộng ở câu hỏi tổng hợp (Aggregation Bottleneck)
@@ -85,12 +85,11 @@ Với câu hỏi đơn nguồn (single-hop), thông tin nằm gọn trong một 
   WHERE s.name = 'MDMA'
   RETURN k.name, r.amount;
   ```
-  Kết quả trả về:
+  Kết quả trả về gồm các vụ án trọng điểm:
   ```
   k.name: "Vụ vận chuyển hơn 10kg ma túy từ Đức về Việt Nam qua sân bay Nội Bài", amount: "hơn 9,6kg"
   k.name: "Vụ mua bán trái phép chất ma túy do Lê Minh Thành và đồng phạm thực hiện tại Hà Nội", amount: "5 viên"
   k.name: "Vụ án sai phạm tại Viện Pháp y tâm thần Trung ương", amount: "0,686g"
-  k.name: "Vụ triệt phá 8 đường dây ma túy liên quan đến Hoàng Nato tại TP.HCM", amount: "khoảng 100g ma túy tổng hợp"
   ```
 - **Nguyên nhân:** Lỗi này nằm ở cả bước Retrieval (tham số top_k=3) và Thiết kế Ontology ban đầu. Dữ liệu về chất MDMA phân tán ở nhiều bài viết độc lập. Vector search chỉ lấy đúng 3 chunk điểm cao nhất nên không thể bao quát toàn bộ tài liệu. Mặt khác, nếu dùng ontology gợi ý một chiều (chỉ đi từ Case sang Luật), câu hỏi hỏi về Chất sẽ không biết đường tìm về Vụ án. Em đã khắc phục điểm này bằng cách thiết kế truy vấn hai chiều trong hàm `context()`, cho phép tìm kiếm các Case nối với node Substance được hỏi.
 - **Đề xuất sửa:** Khi gặp các câu hỏi tổng hợp mang tính gom nhóm, Knowledge Graph cần được thiết kế hỗ trợ duyệt hai chiều từ thực thể trung gian (ở đây là Substance) ngược về các sự kiện (Case), kết hợp chuẩn hóa các từ lóng ("kẹo", "thuốc lắc" về "MDMA") ngay từ lúc nạp dữ liệu.
@@ -132,11 +131,11 @@ $ python bench_kg.py --check
 ```
 
 3 ảnh chụp màn hình Neo4j Browser trong thư mục `report/img/`:
-- `report/img/kg_count.png`: Bảng đếm 208 node theo 7 label trong đồ thị (thấy rõ ô nhập lệnh và bảng số lượng từng loại).
+- `report/img/kg_count.png`: Bảng đếm các node theo 7 label trong đồ thị (thấy rõ ô nhập lệnh và bảng số lượng từng loại).
 - `report/img/kg_cross_kb.png`: Đường đi xuyên 2 KB từ Person qua Case, Crime đến Article (thấy rõ ô nhập lệnh và cột Results overview).
-- `report/img/kg_my_case.png`: Đường đi trọn vẹn cho nhân vật tự chọn Cái Quang Huy (kết nối vụ án vận chuyển ma túy qua sân bay Nội Bài đến Điều 250 BLHS, kèm địa điểm Hà Nội và các chất MDMA, Ketamine).
+- `report/img/kg_my_case.png`: Đường đi trọn vẹn cho nhân vật tự chọn **Trần Thanh Tuấn** (bị cáo nhận án tử hình trong vụ mua bán hơn 36kg ma túy tại TP.HCM, kết nối từ Person qua Case đến Điều 251 BLHS và Điều 255 BLHS, kèm địa bàn TP.HCM).
 
-Người đã chọn cho `kg_my_case.png`: Cái Quang Huy
+Người đã chọn cho `kg_my_case.png`: **Trần Thanh Tuấn**
 
 ## Vấn đề gặp phải (không tính điểm)
 
